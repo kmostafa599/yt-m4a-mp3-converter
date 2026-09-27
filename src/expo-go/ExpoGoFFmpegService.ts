@@ -51,7 +51,24 @@ export async function fetchSaveFromAudioExpoGo(
   let author = 'YouTube Creator';
   let thumbnail = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
-  // 1. Fetch exact title, author, and thumbnail via oEmbed
+  // 1. Vercel Serverless Proxy Extractor (Eliminates Browser CORS restrictions on Vercel deployment)
+  if (typeof window !== 'undefined' && window.location) {
+    try {
+      console.log('[SonicCraft Web] Querying Vercel Serverless proxy for:', videoId);
+      const apiRes = await fetch(`/api/extract?url=${encodeURIComponent(youtubeUrl)}&format=${requestedFormat}`);
+      if (apiRes.ok) {
+        const apiData = await apiRes.json();
+        if (apiData.m4aUrl) {
+          console.log('[SonicCraft Web] Vercel Serverless Proxy resolved audio stream!');
+          return apiData;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[SonicCraft Web] Serverless proxy notice:', apiErr);
+    }
+  }
+
+  // 2. Fetch exact title, author, and thumbnail via oEmbed
   try {
     const oembedRes = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(fullUrl)}`);
     if (oembedRes.ok) {
@@ -67,7 +84,7 @@ export async function fetchSaveFromAudioExpoGo(
     console.warn('[Expo Go Extractor] oEmbed notice:', e);
   }
 
-  // 2. Primary Extractor: Loader.to MP3 / M4A Format Pipeline
+  // 3. Primary Extractor: Loader.to MP3 / M4A Format Pipeline
   try {
     console.log(`[Expo Go Extractor] Querying Loader.to ${requestedFormat} stream for:`, videoId);
     const initRes = await fetch(`https://loader.to/ajax/download.php?format=${requestedFormat}&url=${encodeURIComponent(fullUrl)}`, {
@@ -116,7 +133,7 @@ export async function fetchSaveFromAudioExpoGo(
     console.warn('[Expo Go Extractor] Primary Loader.to extractor notice:', err);
   }
 
-  // 3. Fallback Extractor: Alternative Format Pipeline
+  // 4. Fallback Extractor: Alternative Format Pipeline
   const altFormat = requestedFormat === 'mp3' ? 'm4a' : 'mp3';
   try {
     console.log(`[Expo Go Extractor] Querying Loader.to ${altFormat} fallback for:`, videoId);
@@ -159,7 +176,7 @@ export async function fetchSaveFromAudioExpoGo(
     console.warn('[Expo Go Extractor] Alt format notice:', err);
   }
 
-  // 4. SaveFrom Extractor
+  // 5. SaveFrom Extractor
   try {
     console.log('[Expo Go Extractor] Querying SaveFrom worker...');
     const savefromEndpoint = `https://worker.savefrom.net/savefrom.php?url=${encodeURIComponent(fullUrl)}`;
@@ -195,12 +212,10 @@ export async function fetchSaveFromAudioExpoGo(
     console.warn('[Expo Go Extractor] SaveFrom fallback notice:', err);
   }
 
-  // 5. Invidious Public Instances fallback
+  // 6. Invidious Public Instances fallback
   const invidiousInstances = [
     'https://inv.tux.pizza',
     'https://yewtu.be',
-    'https://invidious.nerdvpn.de',
-    'https://invidious.projectsegfau.lt',
   ];
   for (const inst of invidiousInstances) {
     try {
