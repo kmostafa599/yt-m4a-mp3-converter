@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "YT M4A to MP3 Converter",
+    "slug": "yt-m4a-mp3-converter",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./public/favicon.ico",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0a0f1d"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.converter.ytm4atomp3",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true
+      }
+    },
+    "android": {
+      "package": "com.converter.ytm4atomp3"
+    },
+    "web": {
+      "favicon": "./public/favicon.ico"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow access to microphone for audio processing."
+        }
+      ],
+      "expo-sharing"
+    ]
+
+  }
+}
