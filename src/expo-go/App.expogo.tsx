@@ -169,26 +169,62 @@ export default function AppExpoGo() {
     }
   };
 
-  // Share / Export Audio File (Native Share Sheet or Web Download)
+  // Direct Ad-Free Audio File Export / Download
   const handleShareAudio = async () => {
     if (!mp3Uri) return;
     const mime = fileExt === 'mp3' ? 'audio/mpeg' : 'audio/mp4';
+    const cleanTitle = (metadata?.title || 'SonicCraft_Audio').replace(/[/\\?%*:|"<>]/g, '_');
+    const fileName = `${cleanTitle}.${fileExt}`;
 
-    // Native Sharing
+    // Native Sharing (iOS / Android Expo Go)
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(mp3Uri, { mimeType: mime, dialogTitle: `${t.shareAudioBtn} (${fileExt.toUpperCase()})` });
       return;
     }
 
-    // Web Browser File Download
+    // Web Browser Direct Ad-Free File Download
     if (typeof window !== 'undefined' && window.document) {
-      const a = document.createElement('a');
-      a.href = mp3Uri;
-      a.download = `${metadata?.title || 'SonicCraft'}.${fileExt}`;
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      try {
+        // Try Vercel direct download endpoint if available
+        const proxyDownloadUrl = `/api/download?url=${encodeURIComponent(mp3Uri)}&filename=${encodeURIComponent(fileName)}`;
+        const res = await fetch(proxyDownloadUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          return;
+        }
+      } catch (e) {
+        console.warn('Proxy download notice, trying direct blob fetch:', e);
+      }
+
+      // Client-side Blob fetch fallback (No target="_blank" to prevent ad popups)
+      try {
+        const response = await fetch(mp3Uri);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } catch (err) {
+        console.warn('Direct blob fetch failed, falling back to direct download link:', err);
+        const a = document.createElement('a');
+        a.href = mp3Uri;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
     }
   };
 
