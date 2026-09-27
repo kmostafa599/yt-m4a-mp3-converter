@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from '../components/SafeAreaView';
 import * as Sharing from 'expo-sharing';
-import { createAudioPlayer } from 'expo-audio';
 import {
   fetchSaveFromAudioExpoGo,
   convertM4aToMp3ExpoGoInstant,
@@ -55,15 +54,23 @@ export default function AppExpoGo() {
     if (text) setUrl(text);
   };
 
-  // Share App with Friends via WhatsApp / iMessage / Social
+  // Share App with Friends via WhatsApp / iMessage / Social / Web Share
   const handleShareApp = async () => {
     try {
-      await RNShare.share({
-        message: t.shareAppMessage,
-        title: t.appName,
-      });
+      if (typeof window !== 'undefined' && navigator.share) {
+        await navigator.share({
+          title: t.appName,
+          text: t.shareAppMessage,
+          url: window.location.href,
+        });
+      } else {
+        await RNShare.share({
+          message: t.shareAppMessage,
+          title: t.appName,
+        });
+      }
     } catch (e) {
-      console.warn('Share app error:', e);
+      console.warn('Share app notice:', e);
     }
   };
 
@@ -123,7 +130,7 @@ export default function AppExpoGo() {
     }
   };
 
-  // Native Audio Playback
+  // Cross-Platform Audio Playback (Native & Web)
   const handlePlayPause = async () => {
     if (!mp3Uri) return;
 
@@ -137,23 +144,51 @@ export default function AppExpoGo() {
           setIsPlaying(true);
         }
       } else {
-        const newPlayer = createAudioPlayer({ uri: mp3Uri });
-        setPlayer(newPlayer);
-        setIsPlaying(true);
-        newPlayer.play();
+        if (typeof window !== 'undefined' && typeof window.document !== 'undefined' && !(window as any).expo) {
+          // Web Browser HTML5 Audio Player
+          const webAudio = new window.Audio(mp3Uri);
+          webAudio.onended = () => setIsPlaying(false);
+          webAudio.play();
+          setPlayer(webAudio);
+          setIsPlaying(true);
+        } else {
+          // Expo Go Native Audio Player
+          try {
+            const expoAudio = await import('expo-audio');
+            const newPlayer = expoAudio.createAudioPlayer({ uri: mp3Uri });
+            setPlayer(newPlayer);
+            setIsPlaying(true);
+            newPlayer.play();
+          } catch (err) {
+            console.warn('[Native Player Notice]:', err);
+          }
+        }
       }
     } catch (e) {
-      console.warn('Audio playback error, opening share sheet:', e);
-      handleShareAudio();
+      console.warn('Audio playback notice:', e);
     }
   };
 
-  // Share Audio File via iOS Native Share Sheet
+  // Share / Export Audio File (Native Share Sheet or Web Download)
   const handleShareAudio = async () => {
     if (!mp3Uri) return;
     const mime = fileExt === 'mp3' ? 'audio/mpeg' : 'audio/mp4';
+
+    // Native Sharing
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(mp3Uri, { mimeType: mime, dialogTitle: `${t.shareAudioBtn} (${fileExt.toUpperCase()})` });
+      return;
+    }
+
+    // Web Browser File Download
+    if (typeof window !== 'undefined' && window.document) {
+      const a = document.createElement('a');
+      a.href = mp3Uri;
+      a.download = `${metadata?.title || 'SonicCraft'}.${fileExt}`;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   };
 

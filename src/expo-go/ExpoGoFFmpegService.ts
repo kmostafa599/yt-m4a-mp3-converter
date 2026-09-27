@@ -284,6 +284,18 @@ export async function convertM4aToMp3ExpoGoInstant(
 
   // Target filename extension matches actual audio container format exactly
   const fileExt = detectedExt === 'mp3' ? 'mp3' : 'm4a';
+
+  // Web Browser mode check (if running in Vite / browser without native FileSystem)
+  if (typeof window !== 'undefined' && (!FileSystem || !FileSystem.documentDirectory)) {
+    console.log('[SonicCraft Web] Stream URL ready for web download & playback:', streamUrl);
+    onProgress({ percent: 100, statusText: `${fileExt.toUpperCase()} audio ready for browser download!` });
+    return {
+      fileUri: streamUrl,
+      size: 3500000,
+      fileExtension: fileExt,
+    };
+  }
+
   const targetUri = `${FileSystem.documentDirectory}${cleanName}.${fileExt}`;
 
   // Purge any existing stale file at this path
