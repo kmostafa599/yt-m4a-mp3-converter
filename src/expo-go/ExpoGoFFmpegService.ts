@@ -245,75 +245,61 @@ export async function fetchSaveFromAudioExpoGo(
 }
 
 /**
- * Downloads the requested audio stream to iOS Documents storage with proper container extension
+ * Converts audio to MP3 using client-side FFmpeg WebAssembly engine (Web) or saves native audio stream (Expo Go)
  */
 export async function convertM4aToMp3ExpoGoInstant(
   metadata: ExpoGoMediaMetadata,
   bitrate: '128k' | '192k' | '256k' | '320k',
   onProgress: (progress: ExpoGoProgress) => void
 ): Promise<{ fileUri: string; size: number; fileExtension: string }> {
-  // Clean filename for iOS Files app display
   const cleanName = metadata.title.replace(/[/\\?%*:|"<>]/g, '').trim().substring(0, 50) || 'Audio_Track';
-  const fullUrl = `https://www.youtube.com/watch?v=${metadata.id}`;
 
-  let streamUrl = metadata.m4aUrl;
-  let detectedExt = metadata.format || (metadata.m4aUrl.includes('.mp3') ? 'mp3' : 'm4a');
-
-  onProgress({ percent: 15, statusText: `Processing ${bitrate} audio track for "${metadata.title}"...` });
-
-  // If user requested MP3 explicitly, attempt to fetch a direct MP3 stream from Loader.to
-  try {
-    const mp3Res = await fetch(`https://loader.to/ajax/download.php?format=mp3&url=${encodeURIComponent(fullUrl)}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' },
-    });
-    if (mp3Res.ok) {
-      const mp3Text = await mp3Res.text();
-      if (mp3Text.trim().startsWith('{')) {
-        const mp3Data = JSON.parse(mp3Text);
-        let resolvedMp3Url = mp3Data.download_url;
-        const pollUrl = mp3Data.progress_url || (mp3Data.id ? `https://loader.to/ajax/progress.php?id=${mp3Data.id}` : null);
-        if (!resolvedMp3Url && pollUrl) {
-          for (let i = 0; i < 10; i++) {
-            await new Promise((r) => setTimeout(r, 1000));
-            try {
-              const pRes = await fetch(pollUrl);
-              if (pRes.ok) {
-                const pData = await pRes.json();
-                if (pData.download_url) {
-                  resolvedMp3Url = pData.download_url;
-                  break;
-                }
-              }
-            } catch (e) {}
-          }
-        }
-        if (resolvedMp3Url) {
-          streamUrl = resolvedMp3Url;
-          detectedExt = 'mp3';
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[Expo Go Converter] MP3 conversion notice:', e);
-  }
-
-  // Target filename extension matches actual audio container format exactly
-  const fileExt = detectedExt === 'mp3' ? 'mp3' : 'm4a';
-
-  // Web Browser mode check (if running in Vite / browser without native FileSystem)
+  // 1. Client-Side FFmpeg WebAssembly Transcoding (Web Browser)
   if (typeof window !== 'undefined' && (!FileSystem || !FileSystem.documentDirectory)) {
-    console.log('[SonicCraft Web] Stream URL ready for web download & playback:', streamUrl);
-    onProgress({ percent: 100, statusText: `${fileExt.toUpperCase()} audio ready for browser download!` });
-    return {
-      fileUri: streamUrl,
-      size: 3500000,
-      fileExtension: fileExt,
-    };
+    onProgress({ percent: 15, statusText: `Loading client-side FFmpeg WebAssembly core...` });
+    try {
+      const { convertM4aToMp3 } = await import('../services/ffmpegService');
+      const { mp3Url, fileSize } = await convertM4aToMp3(
+        metadata.m4aUrl,
+        {
+          bitrate,
+          sampleRate: 44100,
+          trimStart: 0,
+          trimEnd: metadata.duration || 180,
+          metadata: {
+            title: metadata.title,
+            artist: metadata.author,
+            album: 'SonicCraft Studio',
+          },
+        },
+        (p) => {
+          onProgress({ percent: p.percent, statusText: p.detailMsg || `Transcoding ${bitrate} MP3 with client FFmpeg...` });
+        }
+      );
+
+      onProgress({ percent: 100, statusText: `Pure ${bitrate} MP3 audio ready for download!` });
+      return {
+        fileUri: mp3Url,
+        size: fileSize,
+        fileExtension: 'mp3',
+      };
+    } catch (ffmpegErr: any) {
+      console.warn('[SonicCraft Web] Client FFmpeg notice, returning direct audio stream:', ffmpegErr);
+      onProgress({ percent: 100, statusText: `Audio stream ready for browser download!` });
+      const fileExt = metadata.m4aUrl.includes('.mp3') ? 'mp3' : 'm4a';
+      return {
+        fileUri: metadata.m4aUrl,
+        size: 3500000,
+        fileExtension: fileExt,
+      };
+    }
   }
 
+  // 2. Expo Go Native File System Saver (iOS / Android)
+  onProgress({ percent: 40, statusText: `Preparing ${bitrate} audio file for "${metadata.title}"...` });
+  const fileExt = metadata.m4aUrl.includes('.mp3') ? 'mp3' : 'm4a';
   const targetUri = `${FileSystem.documentDirectory}${cleanName}.${fileExt}`;
 
-  // Purge any existing stale file at this path
   try {
     const existing = await FileSystem.getInfoAsync(targetUri);
     if (existing.exists) {
@@ -321,13 +307,11 @@ export async function convertM4aToMp3ExpoGoInstant(
     }
   } catch (e) {}
 
-  onProgress({ percent: 50, statusText: `Downloading pure ${fileExt.toUpperCase()} audio file to iOS Documents...` });
+  onProgress({ percent: 70, statusText: `Saving ${fileExt.toUpperCase()} audio file to iOS Documents...` });
 
   try {
-    console.log(`[Expo Go Download] Downloading ${fileExt} stream:`, streamUrl);
-    const downloadRes = await FileSystem.downloadAsync(streamUrl, targetUri);
-
-    onProgress({ percent: 100, statusText: `${fileExt.toUpperCase()} audio file ready in iOS Documents!` });
+    const downloadRes = await FileSystem.downloadAsync(metadata.m4aUrl, targetUri);
+    onProgress({ percent: 100, statusText: `${fileExt.toUpperCase()} audio ready in iOS Documents!` });
     const info = await FileSystem.getInfoAsync(targetUri);
 
     return {
@@ -336,7 +320,7 @@ export async function convertM4aToMp3ExpoGoInstant(
       fileExtension: fileExt,
     };
   } catch (err: any) {
-    console.error('[Expo Go Stream Download Error]:', err);
+    console.error('[SonicCraft Download Error]:', err);
     throw new Error(`Failed to download audio for ${metadata.title}: ${err.message || 'Network error'}`);
   }
 }
