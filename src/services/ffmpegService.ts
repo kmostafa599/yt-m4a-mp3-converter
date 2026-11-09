@@ -91,10 +91,17 @@ export async function convertM4aToMp3(
     onProgress({
       stage: 'downloading',
       percent: 15,
-      detailMsg: 'Fetching M4A audio stream from SaveFrom API link...',
+      detailMsg: 'Fetching audio stream binary into browser memory...',
     });
 
-    const m4aData = await fetchFile(m4aUrl);
+    let m4aData: Uint8Array;
+    try {
+      m4aData = await fetchFile(m4aUrl);
+    } catch (fetchErr) {
+      console.warn('[FFmpeg] Direct stream fetch blocked by CORS, fetching via serverless proxy...', fetchErr);
+      const proxyUrl = `/api/download?url=${encodeURIComponent(m4aUrl)}`;
+      m4aData = await fetchFile(proxyUrl);
+    }
 
     onProgress({
       stage: 'downloading',

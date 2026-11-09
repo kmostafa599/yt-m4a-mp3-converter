@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  // Enable CORS headers for all origins
+  // Enable CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   let author = 'YouTube Creator';
   let thumbnail = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
-  // 1. oEmbed metadata
+  // 1. Fetch metadata via oEmbed
   try {
     const oembedRes = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(fullUrl)}`);
     if (oembedRes.ok) {
@@ -38,75 +38,81 @@ export default async function handler(req, res) {
     }
   } catch (e) {}
 
-  // 2. Query Loader.to server-side (No browser CORS restriction)
-  try {
-    const initRes = await fetch(`https://loader.to/ajax/download.php?format=${format}&url=${encodeURIComponent(fullUrl)}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
+  // 2. Direct Extraction from Invidious & Cobalt Direct Media Proxies
+  const directExtractors = [
+    `https://api.cobalt.tools/api/json`,
+    `https://yewtu.be/api/v1/videos/${videoId}`,
+    `https://inv.tux.pizza/api/v1/videos/${videoId}`,
+    `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
+  ];
+
+  for (const endpoint of directExtractors) {
+    try {
+      if (endpoint.includes('cobalt')) {
+        const cobaltRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+          },
+          body: JSON.stringify({
+            url: fullUrl,
+            downloadMode: 'audio',
+            audioFormat: format,
+          })
+        });
+        if (cobaltRes.ok) {
+          const cData = await cobaltRes.json();
+          if (cData.url) {
+            return res.status(200).json({
+              id: videoId,
+              title,
+              author,
+              thumbnail,
+              m4aUrl: cData.url,
+              format,
+            });
+          }
+        }
+      } else {
+        const invRes = await fetch(endpoint, { signal: AbortSignal.timeout(3500) });
+        if (invRes.ok) {
+          const invData = await invRes.json();
+          const formats = invData.adaptiveFormats || [];
+          const audioStream = formats.find((f) => f.type?.includes('audio/mp4')) || formats.find((f) => f.type?.includes('audio'));
+          if (audioStream?.url) {
+            return res.status(200).json({
+              id: videoId,
+              title: invData.title || title,
+              author: invData.author || author,
+              thumbnail: invData.videoThumbnails?.[0]?.url || thumbnail,
+              m4aUrl: audioStream.url,
+              format: 'm4a',
+            });
+          }
+        }
       }
-    });
+    } catch (e) {}
+  }
 
-    if (initRes.ok) {
-      const initData = await initRes.json();
-      if (initData.title) title = initData.title;
-      if (initData.thumbnail_url) thumbnail = initData.thumbnail_url;
-
+  // 3. Fallback: Secondary Extractor Pipeline
+  try {
+    const loaderRes = await fetch(`https://loader.to/ajax/download.php?format=${format}&url=${encodeURIComponent(fullUrl)}`);
+    if (loaderRes.ok) {
+      const initData = await loaderRes.json();
       if (initData.download_url) {
         return res.status(200).json({
           id: videoId,
-          title,
+          title: initData.title || title,
           author,
-          thumbnail,
+          thumbnail: initData.thumbnail_url || thumbnail,
           m4aUrl: initData.download_url,
           format,
         });
       }
-
-      const pollUrl = initData.progress_url || (initData.id ? `https://loader.to/ajax/progress.php?id=${initData.id}` : null);
-      if (pollUrl) {
-        for (let attempt = 0; attempt < 15; attempt++) {
-          await new Promise((r) => setTimeout(r, 1200));
-          try {
-            const progRes = await fetch(pollUrl);
-            if (progRes.ok) {
-              const progData = await progRes.json();
-              if (progData.download_url) {
-                return res.status(200).json({
-                  id: videoId,
-                  title,
-                  author,
-                  thumbnail,
-                  m4aUrl: progData.download_url,
-                  format,
-                });
-              }
-            }
-          } catch (pErr) {}
-        }
-      }
     }
-  } catch (loaderErr) {
-    console.warn('Serverless Loader.to error:', loaderErr);
-  }
+  } catch (e) {}
 
-  // 3. Fallback: SaveFrom worker endpoint
-  try {
-    const sfRes = await fetch(`https://worker.savefrom.net/savefrom.php?url=${encodeURIComponent(fullUrl)}`);
-    if (sfRes.ok) {
-      const sfData = await sfRes.json();
-      if (sfData?.url?.[0]?.url) {
-        return res.status(200).json({
-          id: videoId,
-          title: sfData.meta?.title || title,
-          author: sfData.meta?.author || author,
-          thumbnail: sfData.meta?.thumbnail || thumbnail,
-          m4aUrl: sfData.url[0].url,
-          format: 'm4a',
-        });
-      }
-    }
-  } catch (sfErr) {}
-
-  return res.status(500).json({ error: 'Unable to extract audio stream URL for this video' });
+  return res.status(500).json({ error: 'Unable to extract audio stream for this video' });
 }

@@ -284,11 +284,13 @@ export async function convertM4aToMp3ExpoGoInstant(
         fileExtension: 'mp3',
       };
     } catch (ffmpegErr: any) {
-      console.warn('[SonicCraft Web] Client FFmpeg notice, returning direct audio stream:', ffmpegErr);
-      onProgress({ percent: 100, statusText: `Audio stream ready for browser download!` });
+      console.warn('[SonicCraft Web] Client FFmpeg notice, returning direct audio stream proxy:', ffmpegErr);
+      onProgress({ percent: 100, statusText: `Audio stream ready for instant download!` });
       const fileExt = metadata.m4aUrl.includes('.mp3') ? 'mp3' : 'm4a';
+      const cleanName = metadata.title.replace(/[/\\?%*:|"<>]/g, '_').trim().substring(0, 50) || 'SonicCraft_Audio';
+      const safeProxyUri = `/api/download?url=${encodeURIComponent(metadata.m4aUrl)}&filename=${encodeURIComponent(cleanName + '.' + fileExt)}`;
       return {
-        fileUri: metadata.m4aUrl,
+        fileUri: safeProxyUri,
         size: 3500000,
         fileExtension: fileExt,
       };

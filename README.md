@@ -30,3 +30,13 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+Audio conversion uses [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) (MIT). The FFmpeg core it loads at runtime is distributed under its own license (LGPL/GPL); see the [FFmpeg legal page](https://ffmpeg.org/legal.html).

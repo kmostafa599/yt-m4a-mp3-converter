@@ -101,7 +101,76 @@ export default function AppExpoGo() {
     }
   };
 
-  // Step 2: Download & Package Audio Track
+  // Direct Instant Ad-Free File Saver (Zero Ads, Zero New Tabs, Instant Download)
+  const triggerDirectAdFreeDownload = async (
+    fileUri: string,
+    ext: string,
+    titleStr: string
+  ) => {
+    if (!fileUri) return;
+    const cleanTitle = titleStr.replace(/[/\\?%*:|"<>]/g, '_').trim().substring(0, 50) || 'SonicCraft_Audio';
+    const fileName = `${cleanTitle}.${ext}`;
+
+    // 1. Native Mobile Device Sharing (iOS / Android Expo Go)
+    if (await Sharing.isAvailableAsync()) {
+      const mime = ext === 'mp3' ? 'audio/mpeg' : 'audio/mp4';
+      await Sharing.shareAsync(fileUri, { mimeType: mime, dialogTitle: `${t.shareAudioBtn} (${ext.toUpperCase()})` });
+      return;
+    }
+
+    // 2. Web Browser Instant Local Blob Download (No target="_blank" to prevent ad redirects)
+    if (typeof window !== 'undefined' && window.document) {
+      // If fileUri is already a local in-memory blob URL (from client FFmpeg / blob fetch)
+      if (fileUri.startsWith('blob:')) {
+        const a = document.createElement('a');
+        a.href = fileUri;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+
+      // Fetch external stream into local memory Blob in background
+      try {
+        const res = await fetch(fileUri);
+        if (res.ok) {
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          return;
+        }
+      } catch (e) {
+        console.warn('Background blob download notice, trying serverless proxy:', e);
+      }
+
+      // Serverless Proxy Download Backup
+      try {
+        const proxyUrl = `/api/download?url=${encodeURIComponent(fileUri)}&filename=${encodeURIComponent(fileName)}`;
+        const res = await fetch(proxyUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          return;
+        }
+      } catch (e) {}
+    }
+  };
+
+  // Step 2: Download & Package Audio Track + Immediate Download
   const handleStartConversion = async () => {
     if (!metadata) return;
 
@@ -122,6 +191,10 @@ export default function AppExpoGo() {
       setMp3Uri(result.fileUri);
       setFileExt(result.fileExtension as 'mp3' | 'm4a');
       const mbSize = (result.size / 1024 / 1024).toFixed(2);
+
+      // Trigger immediate ad-free download right away!
+      await triggerDirectAdFreeDownload(result.fileUri, result.fileExtension, metadata.title);
+
       Alert.alert(t.successTitle, t.successBody(mbSize));
     } catch (err: any) {
       Alert.alert(t.errorTitle, err.message || 'Download failed');
@@ -169,63 +242,10 @@ export default function AppExpoGo() {
     }
   };
 
-  // Direct Ad-Free Audio File Export / Download
+  // Direct Ad-Free Manual Download Button Handler
   const handleShareAudio = async () => {
-    if (!mp3Uri) return;
-    const mime = fileExt === 'mp3' ? 'audio/mpeg' : 'audio/mp4';
-    const cleanTitle = (metadata?.title || 'SonicCraft_Audio').replace(/[/\\?%*:|"<>]/g, '_');
-    const fileName = `${cleanTitle}.${fileExt}`;
-
-    // Native Sharing (iOS / Android Expo Go)
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(mp3Uri, { mimeType: mime, dialogTitle: `${t.shareAudioBtn} (${fileExt.toUpperCase()})` });
-      return;
-    }
-
-    // Web Browser Direct Ad-Free File Download
-    if (typeof window !== 'undefined' && window.document) {
-      try {
-        // Try Vercel direct download endpoint if available
-        const proxyDownloadUrl = `/api/download?url=${encodeURIComponent(mp3Uri)}&filename=${encodeURIComponent(fileName)}`;
-        const res = await fetch(proxyDownloadUrl);
-        if (res.ok) {
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = blobUrl;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-          return;
-        }
-      } catch (e) {
-        console.warn('Proxy download notice, trying direct blob fetch:', e);
-      }
-
-      // Client-side Blob fetch fallback (No target="_blank" to prevent ad popups)
-      try {
-        const response = await fetch(mp3Uri);
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-      } catch (err) {
-        console.warn('Direct blob fetch failed, falling back to direct download link:', err);
-        const a = document.createElement('a');
-        a.href = mp3Uri;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-    }
+    if (!mp3Uri || !metadata) return;
+    await triggerDirectAdFreeDownload(mp3Uri, fileExt, metadata.title);
   };
 
   return (
